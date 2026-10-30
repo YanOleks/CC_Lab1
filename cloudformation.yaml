@@ -1,0 +1,159 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  PARCS-Python 5-node Cluster on AWS EC2 (us-east-1).
+  Deploys 1 Master and 4 separate Worker VMs (t3.micro, 10 vCPUs total <= 32 vCPUs quota).
+
+Parameters:
+  AllowedClientCIDR:
+    Type: String
+    Default: 0.0.0.0/0
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64'
+
+Resources:
+  ParcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: PARCS cluster traffic
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: !Ref AllowedClientCIDR
+      Tags:
+        - Key: Name
+          Value: parcs-cluster-sg
+
+  ParcsClusterInternalIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !GetAtt ParcsSecurityGroup.GroupId
+      SourceSecurityGroupId: !GetAtt ParcsSecurityGroup.GroupId
+      IpProtocol: -1
+
+  ParcsMaster:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.micro
+      ImageId: !Ref LatestAmiId
+      SecurityGroupIds:
+        - !GetAtt ParcsSecurityGroup.GroupId
+      Tags:
+        - Key: Name
+          Value: master
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          set -e
+          dnf update -y
+          dnf install -y docker
+          systemctl enable --now docker
+          docker run -d --name parcs-master --restart always --net host -e PARCS_ARGS="master" registry.hub.docker.com/hummer12007/parcs-node
+
+  ParcsWorker1:
+    Type: AWS::EC2::Instance
+    DependsOn: ParcsMaster
+    Properties:
+      InstanceType: t3.micro
+      ImageId: !Ref LatestAmiId
+      SecurityGroupIds:
+        - !GetAtt ParcsSecurityGroup.GroupId
+      Tags:
+        - Key: Name
+          Value: worker-1
+      UserData:
+        Fn::Base64:
+          Fn::Sub: |
+            #!/bin/bash
+            set -e
+            dnf update -y
+            dnf install -y docker
+            systemctl enable --now docker
+            MASTER_IP="${ParcsMaster.PrivateIp}"
+            until curl -s -f "http://$MASTER_IP:8080" > /dev/null; do sleep 3; done
+            docker run -d --name parcs-worker-1 --restart always --net host -e PARCS_ARGS="worker $MASTER_IP" registry.hub.docker.com/hummer12007/parcs-node
+
+  ParcsWorker2:
+    Type: AWS::EC2::Instance
+    DependsOn: ParcsMaster
+    Properties:
+      InstanceType: t3.micro
+      ImageId: !Ref LatestAmiId
+      SecurityGroupIds:
+        - !GetAtt ParcsSecurityGroup.GroupId
+      Tags:
+        - Key: Name
+          Value: worker-2
+      UserData:
+        Fn::Base64:
+          Fn::Sub: |
+            #!/bin/bash
+            set -e
+            dnf update -y
+            dnf install -y docker
+            systemctl enable --now docker
+            MASTER_IP="${ParcsMaster.PrivateIp}"
+            until curl -s -f "http://$MASTER_IP:8080" > /dev/null; do sleep 3; done
+            docker run -d --name parcs-worker-2 --restart always --net host -e PARCS_ARGS="worker $MASTER_IP" registry.hub.docker.com/hummer12007/parcs-node
+
+  ParcsWorker3:
+    Type: AWS::EC2::Instance
+    DependsOn: ParcsMaster
+    Properties:
+      InstanceType: t3.micro
+      ImageId: !Ref LatestAmiId
+      SecurityGroupIds:
+        - !GetAtt ParcsSecurityGroup.GroupId
+      Tags:
+        - Key: Name
+          Value: worker-3
+      UserData:
+        Fn::Base64:
+          Fn::Sub: |
+            #!/bin/bash
+            set -e
+            dnf update -y
+            dnf install -y docker
+            systemctl enable --now docker
+            MASTER_IP="${ParcsMaster.PrivateIp}"
+            until curl -s -f "http://$MASTER_IP:8080" > /dev/null; do sleep 3; done
+            docker run -d --name parcs-worker-3 --restart always --net host -e PARCS_ARGS="worker $MASTER_IP" registry.hub.docker.com/hummer12007/parcs-node
+
+  ParcsWorker4:
+    Type: AWS::EC2::Instance
+    DependsOn: ParcsMaster
+    Properties:
+      InstanceType: t3.micro
+      ImageId: !Ref LatestAmiId
+      SecurityGroupIds:
+        - !GetAtt ParcsSecurityGroup.GroupId
+      Tags:
+        - Key: Name
+          Value: worker-4
+      UserData:
+        Fn::Base64:
+          Fn::Sub: |
+            #!/bin/bash
+            set -e
+            dnf update -y
+            dnf install -y docker
+            systemctl enable --now docker
+            MASTER_IP="${ParcsMaster.PrivateIp}"
+            until curl -s -f "http://$MASTER_IP:8080" > /dev/null; do sleep 3; done
+            docker run -d --name parcs-worker-4 --restart always --net host -e PARCS_ARGS="worker $MASTER_IP" registry.hub.docker.com/hummer12007/parcs-node
+
+Outputs:
+  DashboardURL:
+    Description: PARCS Web Interface URL
+    Value: !Sub 'http://${ParcsMaster.PublicIp}:8080'
+  MasterPrivateIP:
+    Value: !GetAtt ParcsMaster.PrivateIp
+  Worker1PrivateIP:
+    Value: !GetAtt ParcsWorker1.PrivateIp
+  Worker2PrivateIP:
+    Value: !GetAtt ParcsWorker2.PrivateIp
+  Worker3PrivateIP:
+    Value: !GetAtt ParcsWorker3.PrivateIp
+  Worker4PrivateIP:
+    Value: !GetAtt ParcsWorker4.PrivateIp
